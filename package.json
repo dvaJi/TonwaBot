@@ -1,0 +1,21 @@
+{
+  "private": true,
+  "name": "tonwabot",
+  "version": "0.0.1",
+  "description": "Discord bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dvaJi/TonwaBot.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^11.5.1",
+    "ffmpeg-binaries": "^4.0.0",
+    "opusscript": "^0.0.6",
+    "ytdl-core": "^0.29.4"
+  }
+}
