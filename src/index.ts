@@ -1,6 +1,33 @@
-const Discord = require("discord.js");
-const { prefix } = require("./config.json");
-const ytdl = require("ytdl-core");
+import Discord, {
+  Message,
+  Guild,
+  Channel,
+  VoiceChannel,
+  VoiceConnection
+} from "discord.js";
+import ytdl, { videoFormat } from "ytdl-core";
+import { config as dotenvConfig } from "dotenv";
+
+import isUrl from "./utils/is-url";
+import searchVideo from "./utils/search-video";
+
+dotenvConfig();
+
+interface ISong {
+  title: string;
+  url: string;
+}
+
+interface IQueueConst {
+  textChannel: Channel;
+  voiceChannel: VoiceChannel;
+  connection: VoiceConnection | null;
+  songs: ISong[];
+  volume: number;
+  playing: boolean;
+}
+
+const prefix = "!w";
 
 const client = new Discord.Client();
 
@@ -18,9 +45,13 @@ client.once("disconnect", () => {
   console.log("Disconnect!");
 });
 
-client.on("message", async message => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith(prefix)) return;
+client.on("message", async (message: Message) => {
+  if (message.author.bot) {
+    return;
+  }
+  if (!message.content.startsWith(prefix)) {
+    return;
+  }
 
   const serverQueue = queue.get(message.guild.id);
 
@@ -38,31 +69,45 @@ client.on("message", async message => {
   }
 });
 
-async function execute(message, serverQueue) {
+async function execute(message: Message, serverQueue: any) {
   const args = message.content.split(" ");
 
   const voiceChannel = message.member.voiceChannel;
-  if (!voiceChannel)
+  if (!voiceChannel) {
     return message.channel.send(
       "You need to be in a voice channel to play music!"
     );
+  }
   const permissions = voiceChannel.permissionsFor(message.client.user);
+  if (!permissions) {
+    console.log("Need permissions");
+    return;
+  }
+
   if (!permissions.has("CONNECT") || !permissions.has("SPEAK")) {
     return message.channel.send(
       "I need the permissions to join and speak in your voice channel!"
     );
   }
 
-  const songInfo = await ytdl.getInfo(args[1]);
-  const song = {
+  let videoUrl = "";
+  if (isUrl(args[1])) {
+    videoUrl = args[1];
+  } else {
+    const searchWord = message.content.replace(`${prefix} `, "");
+    videoUrl = await searchVideo(searchWord);
+  }
+
+  const songInfo = await ytdl.getInfo(videoUrl);
+  const song: ISong = {
     title: songInfo.title,
     url: songInfo.video_url
   };
 
   if (!serverQueue) {
-    const queueContruct = {
+    const queueContruct: IQueueConst = {
       textChannel: message.channel,
-      voiceChannel: voiceChannel,
+      voiceChannel,
       connection: null,
       songs: [],
       volume: 5,
@@ -74,9 +119,10 @@ async function execute(message, serverQueue) {
     queueContruct.songs.push(song);
 
     try {
-      var connection = await voiceChannel.join();
+      const connection = await voiceChannel.join();
       queueContruct.connection = connection;
       play(message.guild, queueContruct.songs[0]);
+      return message.channel.send(`${song.title} has been added to the queue!`);
     } catch (err) {
       console.log(err);
       queue.delete(message.guild.id);
@@ -89,26 +135,29 @@ async function execute(message, serverQueue) {
   }
 }
 
-function skip(message, serverQueue) {
-  if (!message.member.voiceChannel)
+function skip(message: Message, serverQueue: any) {
+  if (!message.member.voiceChannel) {
     return message.channel.send(
       "You have to be in a voice channel to stop the music!"
     );
-  if (!serverQueue)
+  }
+  if (!serverQueue) {
     return message.channel.send("There is no song that I could skip!");
+  }
   serverQueue.connection.dispatcher.end();
 }
 
-function stop(message, serverQueue) {
-  if (!message.member.voiceChannel)
+function stop(message: Message, serverQueue: any) {
+  if (!message.member.voiceChannel) {
     return message.channel.send(
       "You have to be in a voice channel to stop the music!"
     );
+  }
   serverQueue.songs = [];
   serverQueue.connection.dispatcher.end();
 }
 
-function play(guild, song) {
+function play(guild: Guild, song: ISong) {
   const serverQueue = queue.get(guild.id);
 
   if (!song) {
@@ -118,13 +167,20 @@ function play(guild, song) {
   }
 
   const dispatcher = serverQueue.connection
-    .playStream(ytdl(song.url))
+    .playStream(
+      ytdl(song.url, {
+        filter: (format: videoFormat) => {
+          return format.container === "mp4" && format.audioEncoding != null;
+        },
+        quality: "highest"
+      })
+    )
     .on("end", () => {
       console.log("Music ended!");
       serverQueue.songs.shift();
       play(guild, serverQueue.songs[0]);
     })
-    .on("error", error => {
+    .on("error", (error: Error) => {
       console.error(error);
     });
   dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
